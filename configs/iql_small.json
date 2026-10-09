@@ -1,0 +1,7 @@
+{
+  "algorithm": "iql", "steps": 10000, "batch_size": 16, "accumulation": 4,
+  "learning_rate": 0.0001, "expectile": 0.7, "beta": 3.0, "weight_clip": 100.0,
+  "target_tau": 0.005, "device": "cuda", "precision": "bf16",
+  "save_every": 250, "tensorboard": true,
+  "model": {"width": 256, "layers": 6, "heads": 8, "history_length": 256}
+}

@@ -1,0 +1,12 @@
+{
+  "source": "simulator",
+  "permission_basis": "self_generated",
+  "ruleset": "majsoul_4p_standard",
+  "expected_final_scores": [
+    25500,
+    23500,
+    23500,
+    26500
+  ],
+  "synthetic": true
+}

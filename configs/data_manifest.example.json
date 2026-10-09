@@ -1,0 +1,9 @@
+{
+  "source": "majsoul",
+  "acquisition_method": "user_exported_replay",
+  "permission_basis": "user_owned",
+  "ruleset": "majsoul_4p_standard",
+  "redistributable": false,
+  "contains_identifiers": true,
+  "retention_class": "research"
+}

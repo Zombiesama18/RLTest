@@ -1,0 +1,6 @@
+{
+  "algorithm": "bc", "steps": 100000, "batch_size": 8, "accumulation": 32,
+  "learning_rate": 0.0001, "seed": 42, "device": "cuda", "precision": "bf16",
+  "save_every": 1000, "tensorboard": true,
+  "model": {"width": 512, "layers": 8, "heads": 8, "history_length": 256}
+}

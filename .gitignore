@@ -218,3 +218,18 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Mahjong Soul RL project artifacts
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.test-tmp/
+*.egg-info/
+runs/
+data/
+!tests/fixtures/
+
+# Local reference report; excluded from code upload
+/雀魂强化学习_deep-research-report.md

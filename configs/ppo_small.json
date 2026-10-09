@@ -1,0 +1,8 @@
+{
+  "algorithm": "ppo", "steps": 1000, "batch_size": 64, "games_per_update": 4,
+  "learning_rate": 0.00005, "gamma": 0.999, "gae_lambda": 0.95,
+  "ppo_clip": 0.15, "ppo_epochs": 3, "target_kl": 0.02,
+  "mode": "4p-red-half", "device": "cuda", "precision": "bf16",
+  "save_every": 10, "tensorboard": true,
+  "model": {"width": 256, "layers": 6, "heads": 8, "history_length": 256}
+}

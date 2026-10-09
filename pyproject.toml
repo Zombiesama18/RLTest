@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mahjong-soul-rl"
+version = "0.1.0"
+description = "Reproducible offline Mahjong Soul research with BC, discrete IQL and PPO"
+requires-python = ">=3.12"
+dependencies = ["riichienv==0.4.10", "torch==2.14.1", "numpy==2.5.3", "pyarrow==26.0.0", "pillow==12.3.0"]
+
+[project.optional-dependencies]
+dev = ["pytest==9.1.1", "ruff==0.16.10"]
+logging = ["tensorboard>=2.20,<3"]
+
+[project.scripts]
+mjsrl = "mjsrl.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]

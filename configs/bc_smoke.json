@@ -1,0 +1,5 @@
+{
+  "algorithm": "bc", "steps": 50, "batch_size": 16,
+  "learning_rate": 0.0003, "seed": 42, "device": "cpu",
+  "model": {"width": 64, "layers": 2, "heads": 4, "history_length": 64}
+}
