@@ -187,6 +187,44 @@ def test_login_error_does_not_leak_secrets():
     assert "private-account" not in str(error.value)
 
 
+def test_route_connection_includes_platform():
+    called = []
+
+    class Rpc:
+        async def call(self, method, request, response_type):
+            called.append(method)
+            assert method == ".lq.Route.requestConnection"
+            assert request.route_id == "route-3" and request.type == 1
+            assert request.timestamp > 0
+            assert b"\x32\x03Web" in request.SerializeToString()
+            return pb.ResRequestConnection(result=1)
+
+    asyncio.run(client.request_connection(Rpc(), "wss://route-3.maj-soul.com:8443/gateway"))
+    assert called == [".lq.Route.requestConnection"]
+
+
+def test_route_connection_error():
+    class Rpc:
+        async def call(self, *args):
+            return pb.ResRequestConnection(error=pb.Error(code=151))
+
+    with pytest.raises(ReplayError, match="连接初始化"):
+        asyncio.run(client.request_connection(Rpc(), "wss://route-2.maj-soul.com/gateway"))
+
+
+def test_login_sets_resource_version_and_reports_151():
+    class Rpc:
+        async def call(self, method, request, response_type):
+            assert request.client_version.resource == "0.11.252.w"
+            assert request.client_version_string == "web-0.11.252"
+            return pb.ResLogin(error=pb.Error(code=151))
+
+    with pytest.raises(ReplayError, match="接口兼容性") as error:
+        asyncio.run(client.login(Rpc(), "private-account", "private-password", "web-0.11.252"))
+    assert "private-password" not in str(error.value)
+    assert "private-account" not in str(error.value)
+
+
 @pytest.mark.parametrize("data_url", [False, True])
 def test_mock_download_login_fetch_decode_ingest(fixture_dir, tmp_path, monkeypatch, data_url):
     import aiohttp

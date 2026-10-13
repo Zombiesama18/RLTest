@@ -6,6 +6,7 @@ import asyncio
 import hashlib
 import hmac
 import json
+import time
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -60,12 +61,28 @@ async def http_json(session, url, *, params=None):
     return value
 
 
+async def http_bytes(session, url):
+    official_url(url)
+    async with session.get(url, allow_redirects=False) as response:
+        if response.status != 200:
+            raise ReplayError(f"雀魂版本资源请求失败，HTTP {response.status}。")
+        return await read_limited(response, 8 * 1024 * 1024)
+
+
 async def discover(session):
     """Use the current public version and routing configuration, not a fixed version."""
-    version = (await http_json(session, BASE + "/version.json")).get("version", "")
-    if not isinstance(version, str) or not version or any(c in version for c in "/?#"):
+    from .client_version import resolve_client_version
+
+    version = await resolve_client_version(lambda url: http_bytes(session, url))
+    # The legacy manifest remains a routing-config index, never a login version.
+    config_version = (await http_json(session, BASE + "/version.json")).get("version", "")
+    if (
+        not isinstance(config_version, str)
+        or not config_version
+        or any(c in config_version for c in "/?#")
+    ):
         raise ReplayError("雀魂客户端版本配置无效。")
-    config = await http_json(session, f"{BASE}/v{version}/config.json")
+    config = await http_json(session, f"{BASE}/v{config_version}/config.json")
     endpoints = []
     for cluster in config.get("ip", []):
         if cluster.get("name") != "player":
@@ -78,8 +95,8 @@ async def discover(session):
                     route_url + "/api/clientgate/routes",
                     params={
                         "platform": "Web",
-                        "version": version,
-                        "lang": "en",
+                        "version": version.package,
+                        "lang": "chs_t",
                     },
                 )
             except (ReplayError, OSError, TimeoutError):
@@ -94,7 +111,7 @@ async def discover(session):
                 break
     if not endpoints:
         raise ReplayError("未取得可用雀魂网关；请检查网络或客户端接口是否更新。")
-    return "web-" + version.removesuffix(".w"), endpoints
+    return version, endpoints
 
 
 class Rpc:
@@ -110,7 +127,8 @@ class Rpc:
 
         pb = protocol()
         self.sequence = self.sequence % 65535 + 1
-        wrapper = pb.Wrapper(name=".lq.Lobby." + method, data=request.SerializeToString())
+        name = method if method.startswith(".lq.") else ".lq.Lobby." + method
+        wrapper = pb.Wrapper(name=name, data=request.SerializeToString())
         packet = b"\x02" + self.sequence.to_bytes(2, "little") + wrapper.SerializeToString()
         async with asyncio.timeout(self.timeout):
             await self.socket.send_bytes(packet)
@@ -151,7 +169,25 @@ async def connect(session, endpoints, timeout):
     if socket is None:
         raise ReplayError("无法连接雀魂网关；请检查网络。")
     async with socket:
-        yield Rpc(socket, timeout)
+        rpc = Rpc(socket, timeout)
+        await request_connection(rpc, endpoint)
+        yield rpc
+
+
+async def request_connection(rpc, endpoint):
+    """Initialize the Route service before Lobby login, including its new platform field."""
+    pb = protocol()
+    route_id = urlsplit(endpoint).hostname.split(".", 1)[0]
+    request = pb.ReqRequestConnection(type=1, route_id=route_id, timestamp=int(time.time()))
+    if "platform" in request.DESCRIPTOR.fields_by_name:
+        request.platform = "Web"
+    else:
+        # ms-api 0.11.100 predates field 6. Protobuf retains unknown fields,
+        # so merge its documented length-delimited string instead of dropping it.
+        request.MergeFromString(b"\x32\x03Web")
+    response = await rpc.call(".lq.Route.requestConnection", request, pb.ResRequestConnection)
+    if response.error.code:
+        raise ReplayError(f"雀魂连接初始化失败，错误码 {response.error.code}。")
 
 
 async def login(rpc, account, password, version):
@@ -170,7 +206,17 @@ async def login(rpc, account, password, version):
     request.device.software = "Chrome"
     request.device.sale_platform = "web"
     request.currency_platforms.extend([1, 2, 5, 6, 8, 10, 11])
+    request.client_version.resource = getattr(
+        version, "resource", version.removeprefix("web-") + ".w"
+    )
+    if hasattr(version, "package"):
+        request.client_version.package = version.package
     response = await rpc.call("login", request, pb.ResLogin)
+    if response.error.code == 151:
+        raise ReplayError(
+            f"雀魂登录接口兼容性错误 151（客户端版本 {version}）；"
+            "需检查连接握手/版本适配，不能据此确认密码错误。"
+        )
     if response.error.code or response.account_id <= 0:
         raise ReplayError(f"雀魂登录失败，错误码 {response.error.code}；请在游戏中确认账号。")
     return response.account_id
