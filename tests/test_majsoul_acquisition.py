@@ -100,6 +100,7 @@ def test_binary_to_training_pipeline(fixture_dir, tmp_path, seed, modern):
     manifest.write_text(json.dumps(METADATA))
     dataset = tmp_path / "silver.parquet"
     result = decode_record(binary, manifest, tmp_path / "raw", dataset)
+    assert result["raw_sha256"] == hashlib.sha256(binary.read_bytes()).hexdigest()
     rows = read_transitions(dataset)
     assert rows and result["transitions"] == len(rows)
     assert sum(row.done for row in rows) == 4

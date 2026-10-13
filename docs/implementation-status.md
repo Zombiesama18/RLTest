@@ -6,7 +6,7 @@
 |---|---|---|
 | Schema | 版本化 tile/state/action/transition、赤牌、公开字段白名单 | 完整 canonical event schema、规则版本迁移 |
 | Rules | RiichiEnv 0.4.10 雀魂 preset、三种四人模式、合法候选 | 独立规则引擎 differential suite、罕见规则黄金局 |
-| Replay | 国服已结束单场牌谱下载、新旧 protobuf 解码、JSON/gzip 与 MJAI，原生 steps、番符与最终分数核对 | 真实账号下载验收、国际服/第三方账号登录、至少 100 场真实授权 golden |
+| Replay | 国服单场与自己账号批量牌谱下载、分页与缓存校验、新旧 protobuf 解码、JSON/gzip 与 MJAI，原生 steps、番符与最终分数核对 | 真实账号下载验收、国际服/第三方账号登录、至少 100 场真实授权 golden |
 | Data | raw vault/清单、Parquet、整场散列切分、HMAC 工具、半 MDP transition | 全 canonical bronze、百万局流式分片、玩家群组/时间切分、质量权重 |
 | BC | Transformer 合法候选 NLL、梯度累积、验证指标、续训 | 专家牌谱、大规模调参、warmup/cosine |
 | IQL | expectile V、twin-Q backup、优势加权 actor、EMA target、共享 encoder | 竞技提升验证、reward ablation、显存优化 |

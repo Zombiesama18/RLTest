@@ -1,4 +1,4 @@
-"""Single completed replay retrieval; no credential persistence or game actions."""
+"""Completed replay retrieval; no credential persistence or game actions."""
 
 from __future__ import annotations
 
@@ -173,6 +173,7 @@ async def login(rpc, account, password, version):
     response = await rpc.call("login", request, pb.ResLogin)
     if response.error.code or response.account_id <= 0:
         raise ReplayError(f"雀魂登录失败，错误码 {response.error.code}；请在游戏中确认账号。")
+    return response.account_id
 
 
 async def fetch_record(session, rpc, reference, version):

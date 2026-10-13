@@ -5,10 +5,11 @@
 | 检查 | 结果 |
 |---|---|
 | 静态检查 | Ruff 通过 |
-| CPU 测试 | 176 passed，包括 100 场完整模拟单局及 38 项新增牌谱获取测试 |
+| CPU 测试 | 196 passed，包括 100 场完整模拟单局及 58 项牌谱获取/批量测试 |
 | 牌谱回放 | 3 组合成 golden × MJAI/已解码雀魂 JSON，最终分数检查通过 |
 | 二进制牌谱闭环 | 3 组合成 golden × 旧 records/新 actions.result protobuf → JSON → Parquet，合法标签与终局分数通过 |
 | 下载模拟 | 登录、共享牌谱登记读取、inline/data_url 内容下载、不保存密码、断开与超时处理通过 |
+| 账号批量下载 | 20 项测试覆盖分页、短页继续、本人归属筛选、一次登录、多场失败后重试、缓存与训练参数校验、取消后继续、CLI 状态退出码 |
 | 真实公开网关 | 自动发现客户端版本和 5 个网关，WebSocket 连接通过；未尝试账号登录 |
 | BC smoke | 50 optimizer steps，loss 有限 |
 | IQL smoke | 50 optimizer steps，Q/V/actor loss 有限 |
@@ -25,7 +26,7 @@
 
 具体日志和 smoke 模型在 `runs/smoke/`。两组 seed 的平均顺位 2.875、paired rank delta +0.375，样本过少，不能据此判断模型强弱或声称强化学习提升。
 
-新增 `fetch-replay` / `decode-replay` 使用方法见 [牌谱获取说明](replay-acquisition.md)。公开连接验证读取到 `web-0.11.252`；下载时动态读取版本，不把该值写死在实现中。当前缺少真实账号和授权牌谱输入，因此真实登录、真实下载及 100 场真实 golden 验收仍未完成。
+`fetch-replay` / `fetch-replays` / `decode-replay` 使用方法见 [牌谱获取说明](replay-acquisition.md)。批量入口自动分页读取登录账号的四人标准段位牌谱，保存逐场结果与汇总；重复执行会校验并跳过已完成项。公开连接验证读取到 `web-0.11.252`；下载时动态读取版本，不把该值写死在实现中。当前缺少真实账号和授权牌谱输入，因此真实登录、真实单场/批量下载及 100 场真实 golden 验收仍未完成。
 
 GPU 日志和模型在 `runs/gpu-smoke/` 与 `runs/gpu-small/`。显存数字来自 315 条单局样本的短跑，不能用作全量训练或 Medium 模型的显存预算。
 

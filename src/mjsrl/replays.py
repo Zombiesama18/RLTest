@@ -266,7 +266,8 @@ def archive_record(
     if dataset is not None:
         if dataset.exists():
             raise ReplayError("训练文件已经存在；请使用新的 --dataset 路径。")
-        result.update(ingest(replay, dataset, manifest, "majsoul", gamma))
+        converted = ingest(replay, dataset, manifest, "majsoul", gamma)
+        result.update({"transitions": converted["transitions"], "output": converted["output"]})
     return result
 
 

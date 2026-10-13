@@ -79,6 +79,17 @@ Parquet 按游戏 ID 的稳定散列分配 80/10/10 的 train/validation/test，
 
 `decode-replay` 可以离线处理下载器保存的完整 `ResGameRecord` protobuf；`ingest` 仍只接收已解码 JSON/MJAI。牌谱解析复用 RiichiEnv 原生 parser/step iterator，未复制 Kanachan 或 Mortal 代码。真实账号登录和牌谱下载尚需本机验收，实际授权雀魂牌谱还需要建立至少 100 场真实 golden replay 集；当前仓库只含合成验证样例。
 
+自动读取自己账号的牌谱列表并批量下载，不需要逐场复制链接：
+
+```powershell
+# 最近 100 场符合条件的四人标准段位牌谱
+.\.venv\Scripts\python.exe -m mjsrl fetch-replays --manifest configs\data_manifest.example.json --limit 100
+# 全部可访问的符合条件牌谱，并按场生成训练文件
+.\.venv\Scripts\python.exe -m mjsrl fetch-replays --manifest configs\data_manifest.example.json --limit 0 --dataset-dir data\silver
+```
+
+每次运行只在本机登录一次，默认请求间隔 2 秒。重复执行会校验并跳过已完成项，逐场结果和汇总保存在 `data/majsoul/batches/`。详见 [批量下载说明](docs/replay-acquisition.md#自动读取自己账号并批量下载)。
+
 ## 正式训练与续训
 
 ```powershell
@@ -138,6 +149,7 @@ src/mjsrl/
   ingest.py      离线雀魂/MJAI 牌谱重放
   replays.py     protobuf 解码、原始文件与来源清单
   majsoul_client.py 国服已结束单场牌谱下载
+  replay_batch.py 自己账号分页、批量下载、缓存校验与继续处理
   storage.py     Parquet、数据清单、HMAC 匿名化工具
   features.py    公开信息编码与候选动作打包
   model.py       Transformer + policy / twin-Q / V
