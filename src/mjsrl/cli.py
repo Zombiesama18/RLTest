@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
+import getpass
 import importlib.metadata
 import json
 import platform
+import sys
+import warnings
 from dataclasses import asdict
 from pathlib import Path
 
@@ -131,6 +135,21 @@ def main():
     replay.add_argument("--manifest", type=Path, required=True)
     replay.add_argument("--format", choices=["majsoul", "mjai"], default="majsoul")
     replay.add_argument("--gamma", type=float, default=0.997)
+    for command, help_text in (
+        ("fetch-replay", "国服单场牌谱链接 → 原始文件、解码牌谱、可选训练样本"),
+        ("decode-replay", "离线 ResGameRecord protobuf → 解码牌谱、可选训练样本"),
+    ):
+        acquisition = sub.add_parser(command, help=help_text)
+        acquisition.add_argument("--manifest", type=Path, required=True)
+        acquisition.add_argument("--output-dir", type=Path, default=Path("data/majsoul"))
+        acquisition.add_argument("--dataset", type=Path)
+        acquisition.add_argument("--gamma", type=float, default=0.997)
+        if command == "fetch-replay":
+            acquisition.add_argument("--url", required=True)
+            acquisition.add_argument("--account", help="雀魂国服账号；省略时在本机询问")
+            acquisition.add_argument("--timeout", type=float, default=30)
+        else:
+            acquisition.add_argument("--input", type=Path, required=True)
     validation = sub.add_parser("validate", help="逐条验证数据协议与合法动作标签")
     validation.add_argument("--data", type=Path, required=True)
     training = sub.add_parser("train", help="BC / IQL / PPO")
@@ -184,6 +203,53 @@ def main():
         }
     elif args.command == "ingest":
         result = ingest(args.input, args.output, args.manifest, args.format, args.gamma)
+    elif args.command in {"fetch-replay", "decode-replay"}:
+        from .replays import ReplayError, decode_record, load_manifest, parse_reference, protocol
+
+        try:
+            # Validate inputs before prompting for secrets or connecting.
+            load_manifest(args.manifest)
+            protocol()
+            if not 0 < args.gamma <= 1:
+                raise ReplayError("gamma 必须在 (0, 1]。")
+            if args.dataset is not None and args.dataset.exists():
+                raise ReplayError("训练文件已经存在；请使用新的 --dataset 路径。")
+            if args.command == "decode-replay":
+                result = decode_record(
+                    args.input, args.manifest, args.output_dir, args.dataset, args.gamma
+                )
+            else:
+                from .majsoul_client import download_replay
+
+                reference = parse_reference(args.url)
+                if reference.region != "cn":
+                    raise ReplayError("首版自动下载支持国服；国际服请导出 MJAI 后 ingest。")
+                if args.timeout <= 0:
+                    raise ReplayError("timeout 必须为正数。")
+                if not sys.stdin.isatty():
+                    raise ReplayError("请在本机交互终端运行，密码会以隐藏方式询问。")
+                account = args.account or input("雀魂国服账号：").strip()
+                with warnings.catch_warnings():
+                    warnings.simplefilter("error", getpass.GetPassWarning)
+                    password = getpass.getpass("雀魂密码（不保存）：")
+                result = asyncio.run(
+                    download_replay(
+                        args.url,
+                        account,
+                        password,
+                        args.manifest,
+                        args.output_dir,
+                        args.dataset,
+                        args.timeout,
+                        args.gamma,
+                    )
+                )
+        except (ValueError, OSError) as exc:
+            parser.exit(2, f"牌谱处理失败：{exc}\n")
+        except (EOFError, KeyboardInterrupt):
+            parser.exit(130, "牌谱处理已取消。\n")
+        except getpass.GetPassWarning:
+            parser.exit(2, "当前终端无法隐藏密码输入，请使用本机 PowerShell 终端。\n")
     elif args.command == "validate":
         records = read_transitions(args.data)
         result = {

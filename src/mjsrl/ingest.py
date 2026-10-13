@@ -1,6 +1,6 @@
 """Authorized decoded Mahjong Soul exports and MJAI replay datasets.
 
-Binary protobuf and URLs are intentionally not accepted: decode/export them first.
+This module consumes decoded files; fetch-replay/decode-replay prepare binary inputs.
 Native replay steps, not a homemade rules replayer, supply expert labels and legality.
 """
 
