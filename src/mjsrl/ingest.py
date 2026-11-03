@@ -15,10 +15,10 @@ from riichienv import GameRule, MjaiReplay, MjSoulReplay
 
 from .engine import canonical_action, snapshot, update_history
 from .rollout import terminal_reward
-from .schema import Transition
+from .schema import Tile, Transition
 from .storage import file_hash, write_transitions
 
-PERMISSION_BASES = {"user_owned", "explicit_permission", "self_generated"}
+PERMISSION_BASES = {"user_owned", "explicit_permission", "self_generated", "public_replay"}
 KNOWN_RECORDS = {
     "NewRound",
     "DealTile",
@@ -84,7 +84,11 @@ def replay_transitions(
         for seat, obs, chosen_native in round_record.steps(
             rule=GameRule.default_mjsoul(), skip_single_action=False
         ):
-            histories[seat] = update_history(histories[seat], obs)
+            # Native replay setup emits random initial-wall marker/draw events before
+            # applying the recorded hand. Normalize from the actual observation.
+            histories[seat] = update_history(
+                histories[seat], obs, initial_dora=str(Tile.from136(obs.dora_indicators[0]))
+            )
             if not obs.legal_actions():
                 continue
             state, _ = snapshot(obs, histories[seat], game_id, "4p-red-half")
@@ -141,9 +145,19 @@ def replay_transitions(
 def ingest(path: Path, output: Path, manifest: Path, format="majsoul", gamma=0.997):
     metadata = json.loads(manifest.read_text(encoding="utf-8-sig"))
     if metadata.get("permission_basis") not in PERMISSION_BASES:
-        raise ValueError("Manifest needs user_owned, explicit_permission or self_generated basis")
+        raise ValueError(
+            "Manifest needs user_owned, explicit_permission, self_generated or public_replay basis"
+        )
     if metadata.get("ruleset") != "majsoul_4p_standard":
         raise ValueError("Manifest must specify majsoul_4p_standard")
+    seats = metadata.get("selected_seats")
+    if seats is not None and (
+        not isinstance(seats, list)
+        or not seats
+        or any(type(seat) is not int or not 0 <= seat < 4 for seat in seats)
+        or len(set(seats)) != len(seats)
+    ):
+        raise ValueError("selected_seats must be a nonempty list of distinct seats 0..3")
     expected_hash = metadata.get("sha256")
     actual_hash = file_hash(path)
     if expected_hash is not None and expected_hash != actual_hash:
@@ -159,11 +173,15 @@ def ingest(path: Path, output: Path, manifest: Path, format="majsoul", gamma=0.9
     )
     count = write_transitions(
         output,
-        replay_transitions(
-            path,
-            format,
-            gamma,
-            expected_scores=metadata.get("expected_final_scores"),
+        (
+            row
+            for row in replay_transitions(
+                path,
+                format,
+                gamma,
+                expected_scores=metadata.get("expected_final_scores"),
+            )
+            if seats is None or row.seat in seats
         ),
     )
     return {"transitions": count, "raw_sha256": actual_hash, "output": str(output)}

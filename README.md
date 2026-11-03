@@ -90,6 +90,14 @@ Parquet 按游戏 ID 的稳定散列分配 80/10/10 的 train/validation/test，
 
 每次运行只在本机登录一次，默认请求间隔 2 秒。重复执行会校验并跳过已完成项，逐场结果和汇总保存在 `data/majsoul/batches/`。详见 [批量下载说明](docs/replay-acquisition.md#自动读取自己账号并批量下载)。
 
+自动采集高段位公开观战牌谱，默认玉之间/王座之间半庄，训练样本仅保留雀圣及以上玩家：
+
+```powershell
+.\.venv\Scripts\python.exe -m mjsrl collect-experts --dataset-dir data\expert-silver
+```
+
+无需打开游戏客户端。公开发现可以加 `--discover-only` 不登录，完整下载在本机输入账号密码；SQLite 保存待结束队列，支持继续运行与 `--export-only` 离线导出。详见 [高段位采集说明与验证边界](docs/expert-collection.md)。
+
 ## 正式训练与续训
 
 ```powershell
@@ -150,6 +158,8 @@ src/mjsrl/
   replays.py     protobuf 解码、原始文件与来源清单
   majsoul_client.py 国服已结束单场牌谱下载
   replay_batch.py 自己账号分页、批量下载、缓存校验与继续处理
+  spectator.py   公开观战发现、结束确认、持久队列与采集
+  expert_data.py 房间/四人段位识别与高手座位筛选
   storage.py     Parquet、数据清单、HMAC 匿名化工具
   features.py    公开信息编码与候选动作打包
   model.py       Transformer + policy / twin-Q / V

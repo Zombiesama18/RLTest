@@ -69,7 +69,9 @@ def load_manifest(path: Path) -> dict:
 
 def validate_metadata(value):
     if not isinstance(value, dict) or value.get("permission_basis") not in PERMISSION_BASES:
-        raise ReplayError("来源清单需要 user_owned、explicit_permission 或 self_generated。")
+        raise ReplayError(
+            "来源清单需要 user_owned、explicit_permission、self_generated 或 public_replay。"
+        )
     if value.get("ruleset") != "majsoul_4p_standard":
         raise ReplayError("来源清单必须指定 majsoul_4p_standard。")
 
@@ -246,6 +248,18 @@ def archive_record(
     )
     if metadata.get("client_version"):
         clean_metadata["client_version"] = metadata["client_version"]
+    for key in (
+        "public_observation",
+        "expert_filter",
+        "player_levels",
+        "selected_seats",
+        "room_mode_id",
+    ):
+        if key in metadata:
+            clean_metadata[key] = metadata[key]
+    if metadata.get("permission_basis") == "public_replay":
+        clean_metadata["redistributable"] = False
+        clean_metadata["acquisition_method"] = "public_spectator_completed_replay"
     write_once(binary, raw)
     write_once(replay, content)
     # Validate scoring before emitting a usable manifest/dataset.

@@ -118,11 +118,19 @@ def snapshot(obs, history: list[dict], game_id: str, mode: str) -> tuple[Mahjong
     return state, {key: item[1] for key, item in native_map.items()}
 
 
-def update_history(history: list[dict], obs) -> list[dict]:
+def update_history(history: list[dict], obs, initial_dora: str | None = None) -> list[dict]:
     events = public_events(obs.new_events(), obs.player_id)
+    opening = False
     for event in events:
         if event["type"] == "start_kyoku":
             history = []
+            if initial_dora is not None:
+                event["dora_marker"] = initial_dora
+                opening = True
+        elif opening and event["type"] == "tsumo":
+            if event.get("actor") == obs.player_id and obs.drawn_tile is not None:
+                event["pai"] = str(Tile.from136(obs.drawn_tile))
+            opening = False
         history.append(event)
     return history
 

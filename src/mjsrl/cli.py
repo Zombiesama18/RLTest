@@ -164,6 +164,37 @@ def main():
             acquisition.add_argument("--timeout", type=float, default=30)
         else:
             acquisition.add_argument("--input", type=Path, required=True)
+    experts = sub.add_parser("collect-experts", help="发现高段位观战对局，结束后下载并筛选高手样本")
+    experts.add_argument(
+        "--manifest", type=Path, default=Path("configs/expert_manifest.example.json")
+    )
+    experts.add_argument("--state-dir", type=Path, default=Path("data/experts"))
+    experts.add_argument("--dataset-dir", type=Path)
+    experts.add_argument(
+        "--rooms",
+        nargs="+",
+        choices=["jade-east", "jade-south", "throne-east", "throne-south"],
+        default=["jade-south", "throne-south"],
+    )
+    experts.add_argument("--min-rank", choices=["master", "saint", "celestial"], default="saint")
+    experts.add_argument("--min-players", type=int, default=1)
+    experts.add_argument(
+        "--duration", type=float, default=3600, help="本次运行时间，秒；到期保留待结束队列"
+    )
+    experts.add_argument("--poll", type=float, default=60)
+    experts.add_argument("--interval", type=float, default=2)
+    experts.add_argument("--timeout", type=float, default=30)
+    experts.add_argument("--record-wait", type=float, default=21600)
+    experts.add_argument("--max-games", type=int, default=100, help="此队列对局总上限；0 不限")
+    experts.add_argument("--gamma", type=float, default=0.997)
+    experts.add_argument("--account", help="雀魂国服账号；省略时在本机询问")
+    expert_mode = experts.add_mutually_exclusive_group()
+    expert_mode.add_argument(
+        "--discover-only", action="store_true", help="不登录，只读取一轮公开观战列表"
+    )
+    expert_mode.add_argument(
+        "--export-only", action="store_true", help="不登录，将已保存牌谱导出为训练数据"
+    )
     validation = sub.add_parser("validate", help="逐条验证数据协议与合法动作标签")
     validation.add_argument("--data", type=Path, required=True)
     training = sub.add_parser("train", help="BC / IQL / PPO")
@@ -290,6 +321,57 @@ def main():
             parser.exit(2, f"牌谱处理失败：{exc}\n")
         except (EOFError, KeyboardInterrupt):
             parser.exit(130, "牌谱处理已取消。\n")
+        except getpass.GetPassWarning:
+            parser.exit(2, "当前终端无法隐藏密码输入，请使用本机 PowerShell 终端。\n")
+    elif args.command == "collect-experts":
+        from .expert_data import ExpertFilter
+        from .replays import ReplayError, load_manifest, protocol
+        from .spectator import CollectorConfig, collect
+
+        try:
+            selection = ExpertFilter(tuple(args.rooms), args.min_rank, args.min_players)
+            config = CollectorConfig(
+                args.duration,
+                args.poll,
+                args.interval,
+                args.timeout,
+                args.max_games,
+                args.record_wait,
+                args.gamma,
+            )
+            selection.validate()
+            config.validate()
+            if load_manifest(args.manifest)["permission_basis"] != "public_replay":
+                raise ReplayError("观战来源清单必须使用 public_replay。")
+            protocol()
+            if args.export_only and args.dataset_dir is None:
+                raise ReplayError("export-only 需要 dataset-dir。")
+            account, password = None, None
+            if not args.discover_only and not args.export_only:
+                if not sys.stdin.isatty():
+                    raise ReplayError("请在本机交互终端运行，密码会以隐藏方式询问。")
+                account = args.account or input("雀魂国服账号：").strip()
+                with warnings.catch_warnings():
+                    warnings.simplefilter("error", getpass.GetPassWarning)
+                    password = getpass.getpass("雀魂密码（不保存）：")
+            result = asyncio.run(
+                collect(
+                    args.state_dir,
+                    args.manifest,
+                    selection,
+                    config,
+                    dataset_dir=args.dataset_dir,
+                    account=account,
+                    password=password,
+                    discover_only=args.discover_only,
+                    export_only=args.export_only,
+                    progress=lambda value: print(json.dumps(value, ensure_ascii=False), flush=True),
+                )
+            )
+        except (ValueError, OSError) as exc:
+            parser.exit(2, f"高手采集失败：{exc}\n")
+        except (EOFError, KeyboardInterrupt):
+            parser.exit(130, "高手采集已取消；已发现对局保留在队列中。\n")
         except getpass.GetPassWarning:
             parser.exit(2, "当前终端无法隐藏密码输入，请使用本机 PowerShell 终端。\n")
     elif args.command == "validate":

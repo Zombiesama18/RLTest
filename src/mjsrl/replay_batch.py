@@ -122,6 +122,12 @@ def ensure_dataset(result, dataset_dir, gamma):
         return False
     dataset = dataset_dir / (result["game_id"] + ".parquet")
     marker = dataset.with_suffix(".batch.json")
+    metadata = load_manifest(Path(result["manifest"]))
+    selection = {
+        key: metadata.get(key) for key in ("selected_seats", "expert_filter", "player_levels")
+    }
+    # None keeps legacy all-seat account archives compatible.
+    selection = selection if any(value is not None for value in selection.values()) else None
     if dataset.exists():
         if not marker.exists():
             raise ReplayError("训练文件已存在但没有批量校验记录；请使用新 dataset-dir。")
@@ -131,6 +137,7 @@ def ensure_dataset(result, dataset_dir, gamma):
             or saved.get("gamma") != gamma
             or saved.get("schema_version") != SCHEMA_VERSION
             or saved.get("dataset_sha256") != file_hash(dataset)
+            or saved.get("selection") != selection
         ):
             raise ReplayError("训练文件校验和或训练参数变化；未覆盖，请使用新 dataset-dir。")
         result["output"] = str(dataset)
@@ -146,6 +153,7 @@ def ensure_dataset(result, dataset_dir, gamma):
             "schema_version": SCHEMA_VERSION,
             "dataset_sha256": file_hash(dataset),
             "transitions": converted["transitions"],
+            "selection": selection,
         },
     )
     return True
