@@ -204,6 +204,8 @@ def fake_network(monkeypatch, live, record, pending_first=False, read_errors=())
             calls.append(method)
             if method == "login":
                 return pb.ResLogin(account_id=9999)  # Experts need not belong to the collector.
+            if method == "fetchServerTime":
+                return pb.ResServerTime()
             if method == "fetchGameLiveList":
                 assert request.filter_id in (212, 216)
                 return pb.ResGameLiveList(live_list=[live] if request.filter_id == 212 else [])
@@ -274,7 +276,7 @@ def test_live_finish_download_filter_resume_and_offline_export(fixture_dir, tmp_
     assert calls.count("login") == 1 and calls.count("fetchGameRecord") == 1
     assert calls.index("readGameRecord") > calls.index("fetchGameRecordsDetail")
     archive = args["directory"] / "raw" / record.head.uuid
-    metadata = json.loads((archive / "manifest.json").read_text())
+    metadata = json.loads((archive / "manifest.json").read_text(encoding="utf-8"))
     assert metadata["selected_seats"] == seats
     assert metadata["redistributable"] is False
     assert metadata["public_observation"]["source"] == "fetchGameLiveList"
@@ -369,7 +371,7 @@ def test_expired_session_stops_but_pending_job_survives(fixture_dir, tmp_path, m
     args = arguments(tmp_path)
     with pytest.raises(spectator.SessionExpired):
         asyncio.run(spectator.collect(**args))
-    status = json.loads((args["directory"] / "status.json").read_text())
+    status = json.loads((args["directory"] / "status.json").read_text(encoding="utf-8"))
     assert status["status"] == "failed" and status["counts"] == {"waiting": 1}
     assert "登录" in status["reason"]
     assert "local-secret" not in json.dumps(status)
@@ -389,7 +391,7 @@ def test_interrupted_decode_resumes_from_raw(fixture_dir, tmp_path, monkeypatch)
     monkeypatch.setattr(spectator, "archive_record", interrupt)
     with pytest.raises(KeyboardInterrupt):
         asyncio.run(spectator.collect(**args))
-    status = json.loads((args["directory"] / "status.json").read_text())
+    status = json.loads((args["directory"] / "status.json").read_text(encoding="utf-8"))
     assert status["status"] == "interrupted" and status["counts"] == {"waiting": 1}
     assert (args["directory"] / "raw" / record.head.uuid / "record.pb").exists()
     monkeypatch.setattr(spectator, "archive_record", original)
@@ -421,7 +423,41 @@ def test_paced_rpc_heartbeat_and_auth_stop(monkeypatch):
     rpc.heartbeat -= 46
     with pytest.raises(spectator.SessionExpired):
         asyncio.run(rpc.call("fetchGameRecord", pb.ReqGameRecord(), pb.ResGameRecord))
-    assert methods == ["heatbeat", "fetchGameRecord"]
+    assert methods == ["fetchServerTime", "fetchGameRecord"]
+
+
+def test_idle_polling_keeps_authenticated_connection_alive(monkeypatch):
+    methods = []
+
+    class Rpc:
+        async def call(self, method, request, response_type):
+            methods.append(method)
+            return response_type()
+
+    monkeypatch.setattr(spectator, "KEEPALIVE_SECONDS", .005)
+    rpc = spectator.PacedRpc(Rpc(), 0)
+    rpc.authenticated = True
+
+    async def run():
+        await rpc.keepalive(force=True)
+        await rpc.pause(.02)
+
+    asyncio.run(run())
+    assert len(methods) >= 2
+    assert set(methods) == {"fetchServerTime"}
+
+
+def test_keepalive_protocol_error_is_not_mislabeled_bad_password():
+    class Rpc:
+        async def call(self, method, request, response_type):
+            assert method == "fetchServerTime"
+            return response_type(error=pb.Error(code=6))
+
+    rpc = spectator.PacedRpc(Rpc(), 0)
+    rpc.authenticated = True
+    with pytest.raises(ReplayError, match="接口错误码 6") as exc:
+        asyncio.run(rpc.keepalive(force=True))
+    assert not isinstance(exc.value, spectator.SessionExpired)
 
 
 def test_cli_discovery_without_tty_or_password(monkeypatch, capsys):
@@ -446,7 +482,7 @@ def test_selection_change_rejects_cached_dataset(fixture_dir, tmp_path):
     result = archive_record(record.SerializeToString(), {**METADATA, **expert}, tmp_path / "raw")
     assert ensure_dataset(result, tmp_path / "silver", 0.997)
     manifest = tmp_path / "raw" / record.head.uuid / "manifest.json"
-    metadata = json.loads(manifest.read_text())
+    metadata = json.loads(manifest.read_text(encoding="utf-8"))
     metadata["selected_seats"] = [0, 1, 2, 3]
     manifest.write_text(json.dumps(metadata))
     with pytest.raises(ReplayError, match="参数变化"):

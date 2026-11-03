@@ -18,6 +18,8 @@ from .replay_batch import ensure_dataset, write_json
 from .replays import ReplayError, archive_record, load_manifest, protocol, write_once
 from .storage import file_hash
 
+KEEPALIVE_SECONDS = 20
+
 
 class SessionExpired(ReplayError):
     """Authentication failures stop the run without consuming pending jobs."""
@@ -169,17 +171,31 @@ class PacedRpc:
         self.last = time.monotonic()
         return await self.rpc.call(method, request, response_type)
 
-    async def call(self, method, request, response_type):
+    async def keepalive(self, force=False):
+        if not self.authenticated or (
+            not force and time.monotonic() - self.heartbeat < KEEPALIVE_SECONDS
+        ):
+            return
         pb = protocol()
-        if self.authenticated and method != "heatbeat" and time.monotonic() - self.heartbeat >= 45:
-            response = await self._call(
-                "heatbeat", pb.ReqHeatBeat(no_operation_counter=0), pb.ResCommon
-            )
-            self.heartbeat = time.monotonic()
-            if response.error.code:
-                raise SessionExpired(
-                    f"采集会话已失效，心跳错误码 {response.error.code}；重新登录可继续。"
-                )
+        # The current CN gateway returns code 6 for the legacy heatbeat method,
+        # even anonymously. Use an authenticated, read-only RPC instead.
+        response = await self._call("fetchServerTime", pb.ReqCommon(), pb.ResServerTime)
+        if response.error.code == 1004:
+            raise SessionExpired("采集登录会话已失效；队列保留，重新登录可继续。")
+        if response.error.code:
+            raise ReplayError(f"采集会话检查失败，服务器时间接口错误码 {response.error.code}。")
+        self.heartbeat = time.monotonic()
+
+    async def pause(self, seconds):
+        deadline = time.monotonic() + seconds
+        while time.monotonic() < deadline:
+            await asyncio.sleep(min(KEEPALIVE_SECONDS, max(0, deadline - time.monotonic())))
+            # Keep receiving while idle so aiohttp can consume WebSocket PONGs.
+            await self.keepalive()
+
+    async def call(self, method, request, response_type):
+        if method != "fetchServerTime":
+            await self.keepalive()
         response = await self._call(method, request, response_type)
         if response.error.code == 1004:
             raise SessionExpired("结束确认/牌谱下载需要有效登录；重新登录可继续。")
@@ -409,6 +425,8 @@ async def collect(
                     if not discover_only:
                         await client.login(rpc, account, password, version)
                         rpc.authenticated = True
+                        await rpc.keepalive(force=True)
+                        report["session_validated"] = True
                     deadline = time.monotonic() + config.duration
                     while True:
                         report.update(
@@ -434,7 +452,7 @@ async def collect(
                             progress(report.copy())
                         if discover_only or time.monotonic() >= deadline:
                             break
-                        await asyncio.sleep(min(config.poll, max(0, deadline - time.monotonic())))
+                        await rpc.pause(min(config.poll, max(0, deadline - time.monotonic())))
                     report["status"] = "discovered" if discover_only else "finished"
         except (KeyboardInterrupt, asyncio.CancelledError):
             report["status"] = "interrupted"
